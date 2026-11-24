@@ -1,0 +1,44 @@
+name: Make XCloudPhone video
+
+on:
+  workflow_dispatch:
+    inputs:
+      voice:
+        description: "Giọng đọc"
+        type: choice
+        default: vi-VN-HoaiMyNeural
+        options:
+          - vi-VN-HoaiMyNeural
+          - vi-VN-NamMinhNeural
+      rate:
+        description: "Tốc độ đọc (ví dụ +8%, +0%, -5%)"
+        type: string
+        default: "+8%"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate video
+        env:
+          VOICE: ${{ inputs.voice }}
+          RATE: ${{ inputs.rate }}
+        run: python main.py --voice "$VOICE" --rate "$RATE"
+
+      - name: Upload video
+        uses: actions/upload-artifact@v4
+        with:
+          name: output_xcloudphone
+          path: output_xcloudphone.mp4
+          retention-days: 30
