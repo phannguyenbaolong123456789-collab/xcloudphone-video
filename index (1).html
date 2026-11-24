@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XCloudPhone Video Maker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1020;--card:#171b30;--text:#eef0ff;--muted:#9aa0c3;--acc:#ffd60a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Be Vietnam Pro",system-ui,sans-serif;padding:16px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--muted);font-size:14px;margin:0 0 16px}
+.wrap{max-width:900px;margin:auto;display:flex;flex-wrap:wrap;gap:16px}
+.panel{flex:1 1 340px;background:var(--card);border-radius:16px;padding:16px}
+label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
+textarea,select,input[type=range]{width:100%}
+textarea,select{background:#0d1020;color:var(--text);border:1px solid #2d3358;border-radius:10px;padding:10px;font:inherit;font-size:14px}
+textarea{min-height:170px;resize:vertical}
+button{border:0;border-radius:12px;padding:12px 16px;font:inherit;font-weight:700;cursor:pointer;margin:12px 8px 0 0}
+.pri{background:var(--acc);color:#111}.sec{background:#2d3358;color:var(--text)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.stage{flex:0 1 340px;text-align:center}
+canvas{width:100%;max-width:340px;aspect-ratio:9/16;border-radius:16px;background:#000}
+.note{font-size:12px;color:var(--muted);line-height:1.5}
+#status{font-size:13px;margin-top:10px;min-height:20px}
+a.dl{display:inline-block;margin-top:12px;background:#2ee59d;color:#052;padding:12px 16px;border-radius:12px;font-weight:700;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="flex-basis:100%"><h1>🎬 XCloudPhone Video Maker</h1>
+  <p class="sub">Tạo video dọc 9:16 (1080×1920) quảng bá XCloudPhone ngay trên trình duyệt.</p></div>
+
+  <div class="panel">
+    <label>Kịch bản (mỗi dòng một câu)</label>
+    <textarea id="script">Bạn có tin điện thoại chạy mượt như lụa ngay trên đám mây?
+XCloudPhone có giao diện đẹp, hiện đại, nhìn là mê ngay!
+Thao tác tiện lợi, chạm đâu mượt đó, không giật, không khựng.
+Hiệu năng mạnh mẽ, chơi game hay làm việc đều dư sức.
+XCloudPhone, đỉnh cao điện thoại đám mây. Thử ngay hôm nay!</textarea>
+    <label>Giọng đọc tiếng Việt (do trình duyệt/hệ điều hành cung cấp)</label>
+    <select id="voice"></select>
+    <label>Tốc độ đọc: <span id="rv">1.1</span>x</label>
+    <input type="range" id="rate" min="0.7" max="1.5" step="0.05" value="1.1">
+    <label>Ảnh nền (tuỳ chọn, chọn nhiều ảnh; bỏ trống = nền gradient)</label>
+    <input type="file" id="bg" accept="image/*" multiple>
+    <label><input type="checkbox" id="cap" checked> Thu cả giọng đọc vào video khi xuất (Chrome máy tính)</label>
+    <button class="sec" id="btnPrev">▶ Xem thử</button>
+    <button class="pri" id="btnExp">🎬 Xuất video</button>
+    <div id="status"></div><div id="out"></div>
+    <p class="note">Khi bấm Xuất video, Chrome sẽ hiện hộp chọn chia sẻ: chọn <b>tab này</b> và tick
+    <b>"Chia sẻ âm thanh của tab"</b> để video có tiếng. Giọng đọc phụ thuộc máy bạn (Chrome thường có
+    "Google Tiếng Việt"). Trên điện thoại thường chỉ xuất được video không tiếng.</p>
+  </div>
+
+  <div class="panel stage"><canvas id="cv" width="1080" height="1920"></canvas></div>
+</div>
+
+<script>
+const W=1080,H=1920,cv=document.getElementById("cv"),ctx=cv.getContext("2d");
+const $=id=>document.getElementById(id);
+const PAL=[["#6C5CE7","#A66CFF","#00D2FF"],["#FF512F","#DD2476","#6A11CB"],["#00C6FF","#0072FF","#7F00FF"],["#F953C6","#B91D73","#FF9A44"],["#11998E","#38EF7D","#0072FF"]];
+const HL=new Set(["xcloudphone","mượt","đẹp","mạnh","mẽ","tiện","lợi","đỉnh","cao"]);
+const PRON={"XCloudPhone":"Ích Cờ Lao Phôn"};
+const FONT='"Be Vietnam Pro",system-ui,sans-serif',ACC="#ffd60a";
+let imgs=[],seg=null,raf=0,busy=false;
+
+/* ---------- giọng đọc ---------- */
+function loadVoices(){
+  const all=speechSynthesis.getVoices(),vi=all.filter(v=>/^vi/i.test(v.lang)),list=vi.length?vi:all;
+  $("voice").innerHTML=list.map(v=>`<option value="${v.name}">${v.name} (${v.lang})</option>`).join("")||"<option>Không tìm thấy giọng</option>";
+  if(!vi.length)$("status").textContent="⚠ Máy chưa có giọng tiếng Việt, hãy dùng Chrome hoặc cài giọng Việt cho hệ điều hành.";
+}
+speechSynthesis.onvoiceschanged=loadVoices;loadVoices();
+$("rate").oninput=e=>$("rv").textContent=e.target.value;
+$("bg").onchange=async e=>{
+  imgs=[];for(const f of e.target.files){const im=new Image();im.src=URL.createObjectURL(f);await im.decode().catch(()=>{});imgs.push(im)}
+};
+function speak(text){
+  return new Promise(res=>{
+    let t=text;for(const k in PRON)t=t.replace(new RegExp(k,"gi"),PRON[k]);
+    const u=new SpeechSynthesisUtterance(t);u.lang="vi-VN";u.rate=+$("rate").value;
+    const v=speechSynthesis.getVoices().find(x=>x.name===$("voice").value);if(v)u.voice=v;
+    let done=false;const fin=()=>{if(!done){done=true;res()}};
+    u.onend=fin;u.onerror=fin;speechSynthesis.speak(u);
+    setTimeout(fin,Math.max(4000,text.length*250)); // dự phòng nếu trình duyệt không phát tiếng
+  });
+}
+
+/* ---------- vẽ ---------- */
+function drawBg(i,z){
+  ctx.save();ctx.translate(W/2,H/2);ctx.scale(z,z);ctx.translate(-W/2,-H/2);
+  if(imgs.length){
+    const im=imgs[i%imgs.length],s=Math.max(W/im.width,H/im.height),w=im.width*s,h=im.height*s;
+    ctx.drawImage(im,(W-w)/2,(H-h)/2,w,h);
+  }else{
+    const c=PAL[i%PAL.length],g=ctx.createLinearGradient(0,0,W,H);
+    g.addColorStop(0,c[0]);g.addColorStop(.5,c[1]);g.addColorStop(1,c[2]);ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="rgba(255,255,255,.12)";
+    [[.2,.25,300],[.85,.5,380],[.3,.8,340]].forEach(([x,y,r])=>{ctx.beginPath();ctx.arc(W*x,H*y,r,0,7);ctx.fill()});
+    // điện thoại + đám mây
+    const px=W/2-175,py=285;
+    rr(px,py,350,700,64);ctx.fillStyle="rgba(255,255,255,.14)";ctx.fill();
+    ctx.lineWidth=6;ctx.strokeStyle="rgba(255,255,255,.6)";ctx.stroke();
+    ctx.fillStyle="rgba(255,255,255,.9)";const cx=W/2,cy=py+300;
+    [[-60,0,46],[0,-34,72],[66,2,42]].forEach(([dx,dy,r])=>{ctx.beginPath();ctx.arc(cx+dx,cy+dy,r,0,7);ctx.fill()});
+    rr(cx-130,cy+10,260,60,30);ctx.fill();
+    ctx.fillStyle="rgba(255,255,255,.35)";
+    for(let r=0;r<2;r++)for(let c=0;c<3;c++){rr(cx-135+c*100,cy+130+r*100,70,70,20);ctx.fill()}
+  }
+  ctx.restore();
+  const vg=ctx.createLinearGradient(0,0,0,H);vg.addColorStop(0,"rgba(0,0,0,.55)");vg.addColorStop(.27,"rgba(0,0,0,0)");
+  vg.addColorStop(.65,"rgba(0,0,0,0)");vg.addColorStop(1,"rgba(0,0,0,.75)");ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r)}
+function wrap(words,maxW){const L=[];let cur=[];
+  for(const w of words){if(cur.length&&ctx.measureText(cur.join(" ")+" "+w).width>maxW){L.push(cur);cur=[w]}else cur.push(w)}
+  if(cur.length)L.push(cur);return L}
+function balanced(words,maxW){let best=wrap(words,maxW),n=best.length;if(n<2)return best;
+  let lo=Math.max(...words.map(w=>ctx.measureText(w).width)),hi=maxW;
+  for(let k=0;k<14;k++){const m=(lo+hi)/2,c=wrap(words,m);if(c.length<=n){best=c;hi=m}else lo=m}return best}
+function drawSub(text,t){
+  const words=text.split(/\s+/),maxW=W-120-88;let size=86,lines;
+  for(;;){ctx.font=`700 ${size}px ${FONT}`;lines=balanced(words,maxW);
+    if((lines.length<=4&&Math.max(...words.map(w=>ctx.measureText(w).width))<=maxW)||size<=44)break;size-=4}
+  const lh=size*1.32,lw=lines.map(l=>ctx.measureText(l.join(" ")).width),bw=Math.max(...lw)+88,bh=lh*lines.length+68;
+  const a=Math.min(1,t/.3),k=1-Math.pow(1-a,3),s=.88+.12*k;
+  ctx.save();ctx.globalAlpha=k;ctx.translate(W/2,H*.66);ctx.scale(s,s);
+  rr(-bw/2,-bh/2,bw,bh,52);ctx.fillStyle="rgba(10,10,28,.65)";ctx.fill();
+  ctx.lineWidth=2;ctx.strokeStyle="rgba(255,255,255,.18)";ctx.stroke();
+  ctx.textBaseline="middle";ctx.lineJoin="round";ctx.lineWidth=Math.max(3,size/14)*2;ctx.strokeStyle="#000";
+  lines.forEach((l,i)=>{
+    let x=-lw[i]/2;const y=-bh/2+34+lh*i+lh/2;
+    l.forEach((w,j)=>{
+      const word=w+(j<l.length-1?" ":""),hl=HL.has(w.toLowerCase().replace(/[^\p{L}\p{N}]/gu,""));
+      ctx.textAlign="left";ctx.strokeText(word,x,y);ctx.fillStyle=hl?ACC:"#fff";ctx.fillText(word,x,y);x+=ctx.measureText(word).width});
+  });
+  ctx.restore();
+}
+function drawHud(i,n){
+  ctx.font=`700 44px ${FONT}`;const bw=ctx.measureText("XCloudPhone").width+76;
+  rr((W-bw)/2,150,bw,86,43);ctx.fillStyle="rgba(255,255,255,.2)";ctx.fill();
+  ctx.textBaseline="middle";ctx.textAlign="left";let x=(W-bw)/2+38;
+  ctx.fillStyle=ACC;ctx.fillText("X",x,193);ctx.fillStyle="#fff";ctx.fillText("CloudPhone",x+ctx.measureText("X").width,193);
+  const ws=[...Array(n)].map((_,k)=>k==i?56:16),tot=ws.reduce((a,b)=>a+b)+16*(n-1);let dx=(W-tot)/2;
+  ws.forEach((w,k)=>{rr(dx,1610,w,16,8);ctx.fillStyle=k==i?ACC:"rgba(255,255,255,.5)";ctx.fill();dx+=w+16});
+}
+function frame(){
+  if(!seg)return;const t=(performance.now()-seg.t0)/1000,p=Math.min(1,t/seg.est),e=p*p*(3-2*p);
+  drawBg(seg.i,1+.12*(seg.i%2?1-e:e));drawHud(seg.i,seg.n);drawSub(seg.text,t);raf=requestAnimationFrame(frame);
+}
+
+/* ---------- chạy / xuất ---------- */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function run(record){
+  if(busy)return;const lines=$("script").value.split("\n").map(s=>s.trim()).filter(Boolean);
+  if(!lines.length||lines.length>8){alert("Nhập từ 1 đến 8 câu.");return}
+  busy=true;$("btnPrev").disabled=$("btnExp").disabled=true;$("out").innerHTML="";
+  let rec=null,chunks=[],disp=null,mime="";
+  await document.fonts.load(`700 40px "Be Vietnam Pro"`).catch(()=>{});
+  try{
+    if(record){
+      const tracks=[...cv.captureStream(30).getVideoTracks()];
+      if($("cap").checked){
+        try{disp=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true,preferCurrentTab:true});
+          const a=disp.getAudioTracks();if(a.length)tracks.push(...a);else alert('Bạn chưa tick "Chia sẻ âm thanh của tab" nên video sẽ không có tiếng.');
+        }catch(e){alert("Không bật được thu âm thanh, video sẽ không có tiếng.")}
+      }
+      mime=["video/mp4","video/webm;codecs=vp9,opus","video/webm"].find(m=>MediaRecorder.isTypeSupported(m))||"";
+      rec=new MediaRecorder(new MediaStream(tracks),mime?{mimeType:mime,videoBitsPerSecond:8e6}:{});
+      rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);rec.start(500);
+    }
+    for(let i=0;i<lines.length;i++){
+      $("status").textContent=`Đang ${record?"quay":"phát"} câu ${i+1}/${lines.length}...`;
+      seg={i,n:lines.length,text:lines[i],t0:performance.now(),est:Math.max(2,lines[i].length*.075)};
+      cancelAnimationFrame(raf);frame();await speak(lines[i]);await sleep(i==lines.length-1?800:350);
+    }
+    if(rec){
+      const done=new Promise(r=>rec.onstop=r);rec.stop();await done;
+      const type=(rec.mimeType||mime||"video/webm"),ext=type.includes("mp4")?"mp4":"webm";
+      const url=URL.createObjectURL(new Blob(chunks,{type}));
+      $("out").innerHTML=`<video src="${url}" controls style="width:100%;max-width:340px;border-radius:12px;margin-top:12px"></video><br><a class="dl" href="${url}" download="output_xcloudphone.${ext}">⬇ Tải video (.${ext})</a>`;
+    }
+    $("status").textContent="Xong!";
+  }catch(err){$("status").textContent="Lỗi: "+err.message}
+  finally{
+    if(disp)disp.getTracks().forEach(t=>t.stop());
+    seg=null;cancelAnimationFrame(raf);busy=false;$("btnPrev").disabled=$("btnExp").disabled=false;
+  }
+}
+$("btnPrev").onclick=()=>run(false);$("btnExp").onclick=()=>run(true);
+drawBg(0,1);drawHud(0,5);
+document.fonts.load(`700 40px "Be Vietnam Pro"`).then(()=>{if(!busy){drawBg(0,1);drawHud(0,5)}});
+</script>
+</body>
+</html>
